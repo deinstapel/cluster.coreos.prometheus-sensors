@@ -13,7 +13,7 @@ RUN apk add --update \
  && rm -rf /var/cache/apk/*
 
 RUN go get \
-      github.com/md14454/gosensors \
+      github.com/amkay/gosensors \
       github.com/prometheus/client_golang/prometheus
 
 # Copy the local package files to the container's workspace.

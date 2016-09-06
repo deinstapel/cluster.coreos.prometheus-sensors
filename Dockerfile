@@ -10,7 +10,10 @@ ADD sensor-exporter /go/src/github.com/ncabatoff/sensor-exporter
 # either manually or with a tool like "godep".)
 RUN apt-get update
 RUN apt-get --yes install libsensors4-dev
-RUN go get github.com/ncabatoff/gosensors github.com/prometheus/client_golang/prometheus && go install github.com/ncabatoff/sensor-exporter
+RUN go get \
+      github.com/ncabatoff/gosensors \
+      github.com/prometheus/client_golang/prometheus \
+ && go install github.com/ncabatoff/sensor-exporter
 
 # Run the outyet command by default when the container starts.
 ENTRYPOINT [ "/go/bin/sensor-exporter" ]

@@ -1,6 +1,6 @@
-# Start from a Debian image with the latest version of Go installed
+# Start from an Alpine image with the latest version of Go installed
 # and a workspace (GOPATH) configured at /go.
-FROM golang
+FROM golang:alpine
 
 # Copy the local package files to the container's workspace.
 ADD sensor-exporter /go/src/github.com/ncabatoff/sensor-exporter
@@ -8,8 +8,13 @@ ADD sensor-exporter /go/src/github.com/ncabatoff/sensor-exporter
 # Build the outyet command inside the container.
 # (You may fetch or manage dependencies here,
 # either manually or with a tool like "godep".)
-RUN apt-get update
-RUN apt-get --yes install libsensors4-dev
+RUN apk add --update \
+      gcc \
+      libc-dev \
+      git \
+      lm_sensors-dev \
+ && rm -rf /var/cache/apk/*
+
 RUN go get \
       github.com/ncabatoff/gosensors \
       github.com/prometheus/client_golang/prometheus \

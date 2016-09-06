@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ncabatoff/gosensors"
+	"github.com/md14454/gosensors"
 	"github.com/prometheus/client_golang/prometheus"
 )
 

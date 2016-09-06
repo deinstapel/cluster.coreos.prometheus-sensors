@@ -2,9 +2,6 @@
 # and a workspace (GOPATH) configured at /go.
 FROM golang:alpine
 
-# Copy the local package files to the container's workspace.
-ADD sensor-exporter /go/src/github.com/ncabatoff/sensor-exporter
-
 # Build the outyet command inside the container.
 # (You may fetch or manage dependencies here,
 # either manually or with a tool like "godep".)
@@ -17,8 +14,12 @@ RUN apk add --update \
 
 RUN go get \
       github.com/ncabatoff/gosensors \
-      github.com/prometheus/client_golang/prometheus \
- && go install github.com/ncabatoff/sensor-exporter
+      github.com/prometheus/client_golang/prometheus
+
+# Copy the local package files to the container's workspace.
+ADD sensor-exporter /go/src/github.com/ncabatoff/sensor-exporter
+
+RUN go install github.com/ncabatoff/sensor-exporter
 
 # Run the outyet command by default when the container starts.
 ENTRYPOINT [ "/go/bin/sensor-exporter" ]

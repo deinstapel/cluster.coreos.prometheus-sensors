@@ -3,7 +3,8 @@
 
 # docker build -t epflsti/cluster.coreos.prometheus-sensors .
 # docker run -i -t epflsti/cluster.coreos.prometheus-sensors bash
-# docker run --privileged=true --net="host"   -v "/":"/rootfs":ro   -v "/var/run/docker.sock":"/var/run/docker.sock":rw   -v "/dev":"/dev":rw   -v "/sys":"/sys":ro  -d  --publish=9192:9255  epflsti/cluster.coreos.prometheus-sensors
+# @TODO: find which capabilities' needed instead of privilegied (note: sys_admin cap not working)
+# docker run --privileged=true -v "/dev":"/dev":rw  --publish=9192:9255 --name=cluster.coreos.prometheus-sensors  epflsti/cluster.coreos.prometheus-sensors
 
 # Use phusion/baseimage as base image. To make your builds
 # reproducible, make sure you lock down to a specific version, not
@@ -29,10 +30,6 @@ RUN apt-get update && apt-get -y install \
 # Clean up APT when done.
 RUN apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-# docker run --privileged=true -d --name="hddtemp-docker" -e HDDTEMP_ARGS="-q -d -F /dev/sd*" --net="host" -e TZ="America/Chicago" -v "/var/run/docker.sock":"/var/run/docker.sock":rw -v "/dev":"/dev":rw drewster727/hddtemp-docker
-# ENV HDDTEMP_ARGS="-q -d -F /dev/sd*"
-# ENV TZ="Europe/London"
-
 RUN mkdir /go
 ENV GOPATH=/go
 
@@ -46,7 +43,7 @@ ADD sensor-exporter /go/src/github.com/ncabatoff/sensor-exporter
 RUN go install github.com/ncabatoff/sensor-exporter
 
 # Run the outyet command by default when the container starts.
-ENTRYPOINT [ "/bin/bash", "-c", "set -x; hddtemp -q -d -F /dev/sd* & /go/bin/sensor-exporter" ]
+ENTRYPOINT [ "/bin/bash", "-c", "set -x; hddtemp -q -d -F /dev/sd? & /go/bin/sensor-exporter" ]
 
 # Document that the service listens on port 9255.
 EXPOSE 9255

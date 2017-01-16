@@ -6,7 +6,7 @@ Requires=docker.service
 [Service]
 ExecStartPre=/bin/sh -c "docker history epflsti/cluster.coreos.prometheus-sensors:latest >/dev/null 2>&1 || docker pull epflsti/sensors:latest"
 ExecStartPre=/bin/sh -c "docker inspect %n >/dev/null 2>&1 && docker rm -f %n || true"
-ExecStart=/usr/bin/docker run --privileged=true  -v "/":"/rootfs":ro   -v "/var/run/docker.sock":"/var/run/docker.sock":rw   -v "/dev":"/dev":rw   -v "/sys":"/sys":ro --publish=9192:9255 --name=%n  epflsti/cluster.coreos.prometheus-sensors 
+ExecStart=/usr/bin/docker run --privileged=true -v "/dev":"/dev":rw --publish=9192:9255 --name=%n  epflsti/cluster.coreos.prometheus-sensors
 ExecStopPost=/bin/sh -c "usr/bin/docker rm -f %n"
 Restart=on-failure
 RestartSec=60

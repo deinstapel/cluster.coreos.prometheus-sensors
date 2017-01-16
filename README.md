@@ -8,7 +8,7 @@ See https://grafana.net/dashboards/237 for an example dashboard.  This is probab
 way more than what you want, just mine the bits that are of interest and incorporate
 them into your general system health dashboard.
 
-![dashboard sensors](epfl-sti/cluster.coreos.prometheus-sensors/raw/master/dashboard-sensors.png "dashboard sensors")
+![dashboard sensors](https://raw.githubusercontent.com/epfl-sti/cluster.coreos.prometheus-sensors/master/dashboard-sensors.png "dashboard sensors")
 
 
 ## Thanks

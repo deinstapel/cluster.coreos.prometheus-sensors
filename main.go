@@ -2,18 +2,27 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
 	_ "net/http/pprof"
+	"os"
+	"os/exec"
+	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
+	"syscall"
+	"time"
 
 	"github.com/amkay/gosensors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 var (
@@ -50,39 +59,142 @@ var (
 
 func main() {
 	var (
-		listenAddress  = flag.String("web.listen-address", ":9255", "Address on which to expose metrics and web interface.")
-		metricsPath    = flag.String("web.telemetry-path", "/metrics", "Path under which to expose metrics.")
-		hddtempAddress = flag.String("hddtemp-address", "localhost:7634", "Address to fetch hdd metrics from.")
+		listenAddress = flag.String("web.listen-address", ":9255", "Address on which to expose metrics and web interface.")
+		metricsPath   = flag.String("web.telemetry-path", "/metrics", "Path under which to expose metrics.")
 	)
 	flag.Parse()
 
-	hddcollector := NewHddCollector(*hddtempAddress)
+	shutdownCtx, stopFunc := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	// Required to keep hddtemp from crashing
+	time.Sleep(1 * time.Second)
+
+	startHddTemp(shutdownCtx, &wg)
+
+	// Required to keep my own socket from running in ECONNREFUSED
+	time.Sleep(1 * time.Second)
+
+	// Register the HDD Temp collector
+	hddcollector := NewHddCollector("localhost:7777")
 	if err := hddcollector.Init(); err != nil {
 		log.Printf("error readding hddtemps: %v", err)
 	}
 	prometheus.MustRegister(hddcollector)
 
+	// Register the LM Sensors collector
 	lmscollector := NewLmSensorsCollector()
 	lmscollector.Init()
 	prometheus.MustRegister(lmscollector)
 
-	http.Handle(*metricsPath, prometheus.Handler())
+	// Remove the default process and golang collectors (those are not interesting anyway)
+	prometheus.Unregister(prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{
+		PidFn: func() (int, error) {
+			return os.Getpid(), nil
+		},
+		Namespace: "",
+	}))
+	prometheus.Unregister(prometheus.NewGoCollector())
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`<html>
+	go func() {
+		defer wg.Done()
+		// Multiplexer
+		mux := http.NewServeMux()
+		mux.Handle(*metricsPath, promhttp.Handler())
+		mux.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(200)
+		})
+		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			w.Write([]byte(`<html>
 			<head><title>Sensor Exporter</title></head>
 			<body>
 			<h1>Sensor Exporter</h1>
 			<p><a href="` + *metricsPath + `">Metrics</a></p>
 			</body>
 			</html>`))
-	})
-	http.ListenAndServe(*listenAddress, nil)
+		})
+		srv := &http.Server{Addr: *listenAddress, Handler: mux}
+
+		go func() {
+			<-shutdownCtx.Done()
+			srv.Close()
+		}()
+
+		if err := srv.ListenAndServe(); err != http.ErrServerClosed {
+			log.Printf("HTTP Server failed: %v", err)
+			os.Exit(2)
+		}
+		log.Printf("HTTP server exited clean")
+	}()
+
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+	<-stop
+	log.Printf("Waiting for HTTP server and hddtemp to terminate")
+	stopFunc()
+	wg.Wait()
+	log.Printf("Done, exiting")
 }
 
-type (
-	LmSensorsCollector struct{}
-)
+func startHddTemp(ctx context.Context, wg *sync.WaitGroup) {
+	files, err := ioutil.ReadDir("/dev")
+	if err != nil {
+		log.Printf("Failed to discover HDDs: %v", err)
+		os.Exit(1)
+	}
+	namesList := []string{}
+	for _, f := range files {
+		name := f.Name()
+		if strings.HasPrefix(name, "sd") {
+			log.Printf("Discovered HDD: /dev/%v", name)
+			namesList = append(namesList, fmt.Sprintf("/dev/%s", name))
+		}
+	}
+
+	execPath, err := exec.LookPath("hddtemp")
+	if err != nil {
+		log.Printf("Failed to find hddtemp util: %v", err)
+		os.Exit(2)
+	}
+
+	args := []string{}
+	args = append(args, "-d", "-F", "-l", "127.0.0.1", "-p", "7777")
+	args = append(args, namesList...)
+
+	cmd := exec.Command(execPath, args...)
+	log.Printf("Running %s", strings.Join(cmd.Args, " "))
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stdout
+	doneChan := make(chan bool, 1)
+	killed := false
+	if err := cmd.Start(); err != nil {
+		log.Printf("Failed to start hddtemp: %v", err)
+	}
+	go func() {
+		if cmd.Wait(); !killed {
+			log.Printf("hddtemp exited (not killed) with exit code: %v", cmd.ProcessState.ExitCode())
+			doneChan <- true
+		} else {
+			log.Printf("hddtemp exited (killed) with exit code: %v", cmd.ProcessState.ExitCode())
+			doneChan <- false
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		select {
+		case <-ctx.Done():
+			killed = true
+			cmd.Process.Signal(syscall.SIGINT)
+		case killProcess := <-doneChan:
+			if killProcess {
+				os.Exit(1)
+			}
+		}
+	}()
+}
+
+type LmSensorsCollector struct{}
 
 func NewLmSensorsCollector() *LmSensorsCollector {
 	return &LmSensorsCollector{}

@@ -1,49 +1,28 @@
-# Merge sensor-exporter (https://github.com/amkay/sensor-exporter)
-# with hddtemp (https://github.com/Drewster727/hddtemp-docker)
+FROM golang:1.12-alpine as builder
+ENV GO111MODULE=on
+WORKDIR /workspace
+RUN apk add lm_sensors-dev git build-base
+ADD go.mod .
+ADD go.sum .
+RUN go mod download
+ADD . .
+RUN GOOS=linux GOARCH=amd64 go build -a -ldflags '-extldflags "-static"' -o /sensor-exporter
 
-# docker build -t epflsti/cluster.coreos.prometheus-sensors .
-# docker run -i -t epflsti/cluster.coreos.prometheus-sensors bash
-# @TODO: find which capabilities' needed instead of privilegied (note: sys_admin cap not working)
-# docker run --privileged=true -v "/dev":"/dev":rw  --publish=9192:9255 --name=cluster.coreos.prometheus-sensors  epflsti/cluster.coreos.prometheus-sensors
+FROM alpine:3.10 as hddtemp-builder
+RUN apk add wget build-base tar gzip gettext-dev gettext linux-headers
+WORKDIR /workspace
+RUN wget http://download.savannah.gnu.org/releases/hddtemp/hddtemp-0.3-beta15.tar.bz2 -O - | tar xjf -
+RUN wget http://ftp.debian.org/debian/pool/main/h/hddtemp/hddtemp_0.3-beta15-53.diff.gz -O - | gunzip > patch.diff
+WORKDIR /workspace/hddtemp-0.3-beta15
+RUN patch -p1 -i "../patch.diff"
+RUN ./configure --prefix=/usr --sbindir=/usr/bin --with-db-path="/hddtemp.db" LDFLAGS="-static"
+RUN make
+RUN cp debian/hddtemp.db /hddtemp.db
+RUN cp src/hddtemp /hddtemp
 
-# Use phusion/baseimage as base image. To make your builds
-# reproducible, make sure you lock down to a specific version, not
-# to `latest`! See
-# https://github.com/phusion/baseimage-docker/blob/master/Changelog.md
-# for a list of version numbers.
-FROM phusion/baseimage:latest
-
-# Use baseimage-docker's init system.
-CMD ["/sbin/my_init"]
-
-# Install hddtemp
-RUN apt-get update && apt-get -y install \
-        build-essential \
-        gcc \
-        libc-dev \
-        hddtemp \
-        lm-sensors \
-        libsensors4-dev \
-        git \
-        golang-go
-
-# Clean up APT when done.
-RUN apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
-
-RUN mkdir /go
-ENV GOPATH=/go
-
-RUN go get \
-        github.com/amkay/gosensors \
-        github.com/prometheus/client_golang/prometheus
-
-# Copy the local package files to the container's workspace.
-ADD sensor-exporter /go/src/github.com/ncabatoff/sensor-exporter
-
-RUN go install github.com/ncabatoff/sensor-exporter
-
-# Run the outyet command by default when the container starts.
-ENTRYPOINT [ "/bin/bash", "-c", "set -x; hddtemp -q -d -F /dev/sd? & /go/bin/sensor-exporter" ]
-
-# Document that the service listens on port 9255.
+FROM alpine:3.10
+COPY --from=builder /sensor-exporter /usr/bin
+COPY --from=hddtemp-builder /hddtemp.db /
+COPY --from=hddtemp-builder /hddtemp /usr/bin
+CMD /usr/bin/sensor-exporter
 EXPOSE 9255

@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: hdd-sensors
+  labels:
+    app: hdd-sensors
+spec:
+  selector:
+    matchLabels:
+      name: hdd-sensors
+  template:
+    metadata:
+      labels:
+        name: hdd-sensors
+    spec:
+      tolerations:
+      - key: node-role.kubernetes.io/master
+        effect: NoSchedule
+      containers:
+      - name: sensors-exporter
+        image: deinstapel/sensors-exporter:latest
+        ports:
+        - containerPort: 9255
+          name: metrics
+          protocol: TCP
+        resources:
+          limits:
+            memory: 50Mi
+          requests:
+            cpu: 20m
+            memory: 20Mi
+        volumeMounts:
+        - name: dev
+          mountPath: /dev
+          mountPropagation: HostToContainer
+          readOnly: true
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - name: dev
+        hostPath:
+          path: /dev
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: hdd-sensors
+spec:
+  selector:
+    name: hdd-sensors
+  type:  ClusterIP
+  clusterIP: None
+  ports:
+  - name:  metrics
+    port:  9255
+    targetPort: metrics

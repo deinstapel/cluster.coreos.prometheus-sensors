@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -143,10 +144,11 @@ func startHddTemp(ctx context.Context, wg *sync.WaitGroup) {
 		log.Printf("Failed to discover HDDs: %v", err)
 		os.Exit(1)
 	}
+	r := regexp.MustCompile("^sd[a-z]+$")
 	namesList := []string{}
 	for _, f := range files {
 		name := f.Name()
-		if strings.HasPrefix(name, "sd") {
+		if r.MatchString(name) {
 			log.Printf("Discovered HDD: /dev/%v", name)
 			namesList = append(namesList, fmt.Sprintf("/dev/%s", name))
 		}

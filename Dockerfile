@@ -21,8 +21,8 @@ RUN cp debian/hddtemp.db /hddtemp.db
 RUN cp src/hddtemp /hddtemp
 
 FROM alpine:3.10
-COPY --from=builder /sensor-exporter /usr/bin
 COPY --from=hddtemp-builder /hddtemp.db /
 COPY --from=hddtemp-builder /hddtemp /usr/bin
+COPY --from=builder /sensor-exporter /usr/bin
 CMD /usr/bin/sensor-exporter
 EXPOSE 9255

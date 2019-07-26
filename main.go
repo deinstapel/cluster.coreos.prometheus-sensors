@@ -26,6 +26,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
+var labelRegex = regexp.MustCompile("[\\w \\t-]+")
+
 var (
 	fanspeedDesc = prometheus.NewDesc(
 		"sensor_lm_fan_speed_rpm",
@@ -79,9 +81,6 @@ func main() {
 
 	// Register the HDD Temp collector
 	hddcollector := NewHddCollector("localhost:7777")
-	if err := hddcollector.Init(); err != nil {
-		log.Printf("error readding hddtemps: %v", err)
-	}
 	prometheus.MustRegister(hddcollector)
 
 	// Register the LM Sensors collector
@@ -275,16 +274,16 @@ func (h *HddCollector) Init() error {
 }
 
 func (h *HddCollector) readTempsFromConn() (string, error) {
-	if h.conn == nil {
-		if err := h.Init(); err != nil {
-			return "", err
-		}
+        if err := h.Init(); err != nil {
+		return "", err
 	}
 
+	h.buf.Reset()
 	_, err := io.Copy(&h.buf, h.conn)
 	if err != nil {
 		return "", fmt.Errorf("Error reading from hddtemp socket: %v", err)
 	}
+	h.conn.Close()
 	return h.buf.String(), nil
 }
 
@@ -304,9 +303,8 @@ func parseHddTemps(s string) ([]HddTemperature, error) {
 		hddtemp, err := parseHddTemp(item)
 		if err != nil {
 			return nil, fmt.Errorf("Error parsing output from hddtemp: %v", err)
-		} else {
-			hddtemps = append(hddtemps, hddtemp)
 		}
+		hddtemps = append(hddtemps, hddtemp)
 	}
 	return hddtemps, nil
 }
@@ -317,13 +315,15 @@ func parseHddTemp(s string) (HddTemperature, error) {
 		return HddTemperature{}, fmt.Errorf("error parsing item from hddtemp, expected 4 tokens: %s", s)
 	}
 	dev, id, temp, unit := pieces[0], pieces[1], pieces[2], pieces[3]
+	log.Printf("Got data set", dev, id, temp, unit, labelRegex.FindString(id))
+	id = strings.TrimSpace(labelRegex.FindString(id))
 
 	if unit == "*" {
 		return HddTemperature{Device: dev, Id: id, TemperatureCelsius: -1}, nil
 	}
 
 	if unit != "C" {
-		return HddTemperature{}, fmt.Errorf("error parsing item from hddtemp, I only speak Celsius", s)
+		return HddTemperature{}, fmt.Errorf("error parsing item from hddtemp, I only speak Celsius: %s", s)
 	}
 
 	ftemp, err := strconv.ParseFloat(temp, 64)
